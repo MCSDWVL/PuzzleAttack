@@ -13,6 +13,10 @@ public class GlobalTuning : MonoBehaviour
 	public float MinimumSecondsPerRow = 0f;
 	public float SubtractSecondsPerRowOnEachCombine = 0f;
 	public float SubtractSecondsPerRowOnEachNewRow = 0f;
+	public int RowsPerGameChunk = 12;
+
+	public float DegarbifyMinTime = 1;
+	public float DegarbifyAddTimePerDistance = 1;
 
 	public void SubtractSecondsPerRow(float subtractAmt)
 	{

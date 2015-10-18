@@ -10,9 +10,8 @@ public class GamePiece : MonoBehaviour
 	public bool IsCombining { get; set; }
 	public bool IsGarbage { get; set; }
 	public bool IsMoving { get; set; }
-	public bool IsFalling { get; set; }
 	public bool IsConnected { get { return ConnectedPieces != null && ConnectedPieces.Count > 0; } }
-	public bool ForceFall { get; set; }
+	public bool IsDegarbifying { get { return degarbifyTime > 0 && IsGarbage; } }
 
 	public Vector3 TargetPosition { get; set; }
 	public float MoveSpeed { get; set; }
@@ -35,10 +34,40 @@ public class GamePiece : MonoBehaviour
 	public int Row { get; set; }
 	public int Col { get; set; }
 
+	private float initialDegarbifyTime;
+	private float degarbifyTime;
+
+	public delegate void PieceComboedHandler(GamePiece piece);
+	public event PieceComboedHandler PieceComboed;
+	public void OnPieceComboed(GamePiece piece) { if (PieceComboed != null) PieceComboed(piece); }
+
 	private void Start()
 	{
 		sprite = GetComponent<SpriteRenderer>();
 		ConnectedPieces = new List<GamePiece>();
+	}
+
+	public void ClearState()
+	{
+		MatchGroup = EMPTY_MATCH_GROUP;
+		if (IsMoving)
+		{
+			transform.localPosition = TargetPosition;
+			IsMoving = false;
+		}
+
+		IsCombining = false;
+		IsGarbage = false;
+		
+		MatchingCount = 0;
+		MoveSpeed = 0f;
+		
+		deathCountdown = 0f;
+		initialDegarbifyTime = 0f;
+		degarbifyTime = 0f;
+	
+		if(ConnectedPieces != null)
+			ConnectedPieces.Clear();
 	}
 
 	public bool ConnectedTo(GamePiece other)
@@ -48,7 +77,6 @@ public class GamePiece : MonoBehaviour
 
 	public void BeginCombo()
 	{
-		Debug.Log("Beginning combo");
 		if (IsCombining)
 			return;
 		IsCombining = true;
@@ -69,20 +97,21 @@ public class GamePiece : MonoBehaviour
 		MoveSpeed = moveSpeed;
 	}
 
-	private void FixedUpdate()
+	public void BeginDegarbify(int manhattenDistanceFromCleaner)
 	{
-		if (IsMoving)
-		{
-			transform.localPosition = Vector3.MoveTowards(transform.localPosition, TargetPosition, MoveSpeed * Time.deltaTime);
-			if ((transform.localPosition - TargetPosition).sqrMagnitude <= Mathf.Epsilon)
-			{
-				transform.localPosition = TargetPosition;
-				IsMoving = false;
-			}
-		}
+		degarbifyTime = GlobalTuning.Instance.DegarbifyMinTime + GlobalTuning.Instance.DegarbifyAddTimePerDistance * manhattenDistanceFromCleaner;
+		initialDegarbifyTime = degarbifyTime;
+		startingColor = sprite.color;
 	}
 
 	private void Update()
+	{
+		UpdateCombining();
+		UpdateMoving();
+		UpdateDegarbify();
+	}
+
+	private void UpdateCombining()
 	{
 		if (IsCombining)
 		{
@@ -91,17 +120,58 @@ public class GamePiece : MonoBehaviour
 			else
 				deathCountdown = MotherBoard.GlobalDeathCountdown;
 
-			sprite.color = Color.Lerp(startingColor, Color.white, (GlobalTuning.Instance.CombineTime - deathCountdown)/GlobalTuning.Instance.CombineTime);
+			sprite.color = Color.Lerp(startingColor, Color.white, (GlobalTuning.Instance.CombineTime - deathCountdown) / GlobalTuning.Instance.CombineTime);
 			if (deathCountdown <= 0)
 			{
-				// TODO: score for melding here!
-				// TODO: check for touching garbage and make it normal here!
+				OnPieceComboed(this);
+
 				// Change into an empty piece.
 				IsCombining = false;
 				MatchGroup = EMPTY_MATCH_GROUP;
 				MotherFactory.GenerateGamePieceAppearance(this);
 				GlobalTuning.Instance.OnCombineAchieved(MatchingCount);
 			}
+		}
+	}
+
+	private void UpdateMoving()
+	{
+		if (IsMoving)
+		{
+			transform.localPosition = Vector3.MoveTowards(transform.localPosition, TargetPosition, MoveSpeed * Time.deltaTime);
+			if ((transform.localPosition - TargetPosition).sqrMagnitude <= Mathf.Epsilon)
+			{
+				// Make sure all connected pieces finish their moves ATOMICALLY.
+				if (IsConnected)
+					foreach (var piece in ConnectedPieces)
+						piece.CompleteMovement();
+				else
+					CompleteMovement();
+			}
+		}
+	}
+
+	private void CompleteMovement()
+	{
+		transform.localPosition = TargetPosition;
+		IsMoving = false;
+	}
+
+	private void UpdateDegarbify()
+	{
+		if (degarbifyTime <= 0 || !IsGarbage)
+			return;
+
+		degarbifyTime -= Time.deltaTime;
+		sprite.color = Color.Lerp(startingColor, Color.white, 1 - (degarbifyTime/initialDegarbifyTime));
+
+		if (degarbifyTime <= 0)
+		{
+			// Make this a new random piece!
+			ConnectedPieces.Clear();
+			IsGarbage = false;
+			MatchGroup = MotherBoard.OtherRandomGenerator.Next(1, MotherBoard.NumPieceTypes);
+			MotherFactory.GenerateGamePieceAppearance(this);
 		}
 	}
 }

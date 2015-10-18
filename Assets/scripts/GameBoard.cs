@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 public class GameBoard : MonoBehaviour 
 {
@@ -24,17 +25,28 @@ public class GameBoard : MonoBehaviour
 
 	public float pieceSpacing = 10f;
 
+	public System.Random OtherRandomGenerator { get; set; }
 	public System.Random BoardRandomGenerator { get; set; }
 	public int RandomSeed = -1;
 
 	public bool GameOver { get; set; }
 
+	// Events
+	public delegate void RowAddedHandler(GameBoard board);
+	public event RowAddedHandler RowAdded;
+	public void OnRowAdded(GameBoard board) { if (RowAdded != null) RowAdded(board); }
+
+	public delegate void TotalComboHandler(GameBoard board, int count);
+	public event TotalComboHandler TotalCombo;
+	public void OnTotalCombo(GameBoard board, int count) { if (TotalCombo != null) TotalCombo(board, count); }
+
 	private void Awake()
 	{
-		if (RandomSeed > 0)
-			BoardRandomGenerator = new System.Random(RandomSeed);
-		else
-			BoardRandomGenerator = new System.Random();
+		if (RandomSeed <= 0)
+			RandomSeed = new System.Random().Next();
+		
+		BoardRandomGenerator = new System.Random(RandomSeed);
+		OtherRandomGenerator = new System.Random(RandomSeed);
 
 		UpdateTargetPositionForScrolling();
 		InitializeEmptyBoard(Rows, Cols);
@@ -56,6 +68,97 @@ public class GameBoard : MonoBehaviour
 		return piece;
 	}
 
+	public void InitializeFromRemote(int seed = -1)
+	{
+		ClearBoard();
+		if(seed > 0)
+			RandomSeed = seed;
+
+		if (RandomSeed <= 0)
+			RandomSeed = new System.Random().Next();
+
+		BoardRandomGenerator = new System.Random(RandomSeed);
+		OtherRandomGenerator = new System.Random(RandomSeed);
+
+		InitializeEmptyBoard(Rows, Cols);
+		FillStartingBoard(StartingPieces);
+	}
+
+	public void ClearBoard()
+	{
+		foreach (var piece in pieces)
+		{
+			PieceFactory.MutateGamePiece(piece, GamePiece.EMPTY_MATCH_GROUP);
+		}
+	}
+
+	public string Serialize()
+	{
+		var ret = "";
+		SerializeBoard(out ret);
+		return ret;
+	}
+
+	public void SerializeBoard(out string ret)
+	{
+		int[][] arr;
+		SerializeBoard(out arr);
+		ret = "";
+
+		for (var row = 0; row < arr.Length; ++row)
+		{
+			ret += string.Join(SerializationHelper.COL_SEPARATOR+"", arr[row].Select(x => x.ToString()).ToArray());
+			if (row != arr.Length - 1)
+				ret += SerializationHelper.ROW_SEPARATOR;
+		}
+	}
+
+	public void SerializeBoard(out int[][] ret)
+	{
+		ret = new int[ActualRows][];
+		for (var row = 0; row < ActualRows; ++row)
+			ret[row] = new int[ActualCols];
+		foreach (var piece in pieces)
+			ret[piece.Row][piece.Col] = piece.MatchGroup;
+	}
+
+	public void DeserializeBoard(string matchGroupsString)
+	{
+		if (pieces == null)
+			InitializeEmptyBoard(Rows, Cols);
+		else
+			ClearBoard();
+
+		var matchGroups = new int[ActualRows,ActualCols];
+		var rowStrings = matchGroupsString.Split(SerializationHelper.ROW_SEPARATOR);
+		for (var row = 0; row < ActualRows; ++row)
+		{
+			var colStrings = rowStrings[row].Split(SerializationHelper.COL_SEPARATOR);
+			var colVals = colStrings.Select(x => int.Parse(x)).ToArray();
+			for (var col = 0; col < ActualCols; ++col)
+			{
+				PieceFactory.MutateGamePiece(GetPieceAt(row, col), colVals[col]);
+			}
+		}
+
+		// Link all garbage pieces together.
+		int biggestGarbageMatch = NumPieceTypes + 1;
+		List<GamePiece> garbageGroup = new List<GamePiece>();
+		do
+		{
+			garbageGroup.Clear();
+			garbageGroup.AddRange(from GamePiece piece in pieces where piece.MatchGroup == biggestGarbageMatch select piece);
+			if (garbageGroup == null)
+				break;
+			foreach (var garbagePiece in garbageGroup)
+			{
+				garbagePiece.IsGarbage = true;
+				garbagePiece.ConnectedPieces.AddRange(garbageGroup);
+			}
+			++biggestGarbageMatch;
+		} while (garbageGroup.Count > 0);
+	}
+
 	void InitializeEmptyBoard(int rows, int columns) 
 	{
 		pieces = new GamePiece[rows, columns];
@@ -66,7 +169,8 @@ public class GameBoard : MonoBehaviour
 		{
 			for (var c = 0; c < Cols; ++c)
 			{
-				CreateEmptyPieceAt(r, c);
+				var piece = CreateEmptyPieceAt(r, c);
+				piece.PieceComboed += OnPieceComboed;
 			}
 		}
 	}
@@ -88,7 +192,7 @@ public class GameBoard : MonoBehaviour
 				continue;
 
 			var newMatchGroup = BoardRandomGenerator.Next(1, NumPieceTypes);
-			PieceFactory.MutateGamePiece(ref piece, newMatchGroup);
+			PieceFactory.MutateGamePiece(piece, newMatchGroup);
 			numAddedPieces++;
 		}
 	}
@@ -135,7 +239,17 @@ public class GameBoard : MonoBehaviour
 		return GetPieceAt(r, c);
 	}
 
-	public void PerformSwap(int r, int c, BoardDirection direction, float speed1 = Mathf.Infinity, float speed2 = -1f)
+	public List<GamePiece> GetNeighbors(int r, int c)
+	{
+		var ret = new List<GamePiece>();
+		ret.Add(GetNeighbor(r, c, BoardDirection.Up));
+		ret.Add(GetNeighbor(r, c, BoardDirection.Left));
+		ret.Add(GetNeighbor(r, c, BoardDirection.Down));
+		ret.Add(GetNeighbor(r, c, BoardDirection.Right));
+		return ret;
+	}
+
+	public void PerformSwap(int r, int c, BoardDirection direction, float speed1 = Mathf.Infinity, float speed2 = -1f, bool forceAgainstGarbage = false)
 	{
 		// If only one speed specified, use it for both piece.
 		if (speed2 < 0f)
@@ -153,6 +267,11 @@ public class GameBoard : MonoBehaviour
 
 		// Don't swap pieces in motion.
 		if (piece1.IsMoving || piece2.IsMoving || piece1.IsCombining || piece2.IsCombining)
+		{
+			return;
+		}
+
+		if (!forceAgainstGarbage && (piece1.IsGarbage || piece2.IsGarbage))
 			return;
 
 		// Tell each piece to begin its swap.
@@ -166,86 +285,133 @@ public class GameBoard : MonoBehaviour
 		SetPieceAt(r2, c2, piece1);
 	}
 
-	bool PieceCanFall(int r, int c)
+	FallState PieceCanFall(int r, int c)
 	{
 		var piece = GetPieceAt(r, c);
 
-		if (piece.ForceFall)
-			return true;
-
 		// Empty or moving pieces can't fall.
 		if (piece.IsEmpty || piece.IsMoving)
-			return false;
+			return FallState.AlreadyFalling;
 
 		// Connected pieces need to be handled specially.
 		if (!piece.IsConnected)
 		{
 			var below = GetNeighbor(r, c, BoardDirection.Down);
-			return below != null && below.IsEmpty;
+			return below != null && below.IsEmpty && !below.IsMoving ? FallState.ShouldFall : FallState.ShouldNotFall;
 		}
 		else
 		{
 			// Look at each connected piece, checking taht beneath it is a piece it's connected to, or an empty space, so that they can all fall as a group.
 			foreach (var connectedPiece in piece.ConnectedPieces)
 			{
+				if(connectedPiece.IsMoving)
+					return FallState.FallImpossibleFromOtherConstraint;
 				var belowConnected = GetNeighbor(connectedPiece.Row, connectedPiece.Col, BoardDirection.Down);
-				if (belowConnected == null || (!belowConnected.IsEmpty && !connectedPiece.ConnectedTo(belowConnected)))
-				{
-					return false;
-				}
+
+				// If the piece below is connected to us, we defer to the rest of the group to decide if we fall.
+				if (connectedPiece.ConnectedTo(belowConnected))
+					continue;
+
+				// If a connected piece is touching the "ground" we can't fall.
+				if (belowConnected == null)
+					return FallState.FallImpossibleFromOtherConstraint;
+
+				// If a connected piece has a non-empty piece below it (and we already know it's not our brother) we can't fall.
+				if (!belowConnected.IsEmpty)
+					return FallState.FallImpossibleFromOtherConstraint;
+
+				// If the piece below us is moving and isn't connected to us we can't fall (wait for it to finish).
+				if (belowConnected.IsMoving)
+					return FallState.FallImpossibleFromOtherConstraint;
 			}
-			return true;
+
+			// Guess we can fall...
+			return FallState.ShouldFall;
 		}
 	}
 
-	// Check every piece for having a "hole" beneath it, and trigger a fall if it does.
-	void CheckForFalls()
+	private int piecesComboedSinceLastLateUpdate;
+	private void OnPieceComboed(GamePiece piece)
 	{
-		// HACK: first mark every piece as not falling...
-		for (var r = 0; r < ActualRows; ++r)
+		++piecesComboedSinceLastLateUpdate;
+		// Check for surrounding garbage and ...?
+		int row = piece.Row;
+		int col = piece.Col;
+		foreach (var neighbor in GetNeighbors(row, col))
 		{
-			for (var c = 0; c < ActualCols; ++c)
+			if (neighbor != null && neighbor.IsGarbage)
 			{
-				GetPieceAt(r, c).IsFalling = false;
-			}
-		}
-
-		// Check each piece for fall ability.
-		for (var r = 0; r < ActualRows; ++r)
-		{
-			for (var c = 0; c < ActualCols; ++c)
-			{
-				if (PieceCanFall(r, c))
+				foreach (var connected in neighbor.ConnectedPieces)
 				{
-					var thisPiece = GetPieceAt(r, c);
-					
-					// All connected pieces need to fall at once.
-					if (thisPiece.IsConnected && !thisPiece.ForceFall)
-					{
-						foreach (var piece in thisPiece.ConnectedPieces)
-						{
-							piece.ForceFall = true;
-						}
-					}
-
-					PerformSwap(thisPiece.Row, thisPiece.Col, BoardDirection.Down, GlobalTuning.Instance.FallSpeed, Mathf.Infinity);
-					thisPiece.ForceFall = false;
+					var dist = Mathf.Abs(connected.Row - row) + Mathf.Abs(connected.Col - col);
+					connected.BeginDegarbify(dist);
 				}
 			}
 		}
+	}
+
+	private void LateUpdate()
+	{
+		if (piecesComboedSinceLastLateUpdate > 0)
+		{
+			OnTotalCombo(this, piecesComboedSinceLastLateUpdate);
+		}
+		piecesComboedSinceLastLateUpdate = 0;
+	}
+
+	// Check every piece for having a "hole" beneath it, and trigger a fall if it does.
+	enum FallState { Unevaluated, ShouldFall, ShouldNotFall, FallImpossibleFromOtherConstraint, AlreadyFalling };
+	void CheckForFalls()
+	{
+		// Initialize fallstate array
+		FallState[,] fallstate = new FallState[ActualRows, ActualCols];
+		for (var r = 0; r < ActualRows; ++r)
+			for (var c = 0; c < ActualCols; ++c)
+				fallstate[r, c] = FallState.Unevaluated;
+
+		// Update each positions fallstate
+		for (var r = 0; r < ActualRows; ++r)
+		{
+			for (var c = 0; c < ActualCols; ++c)
+			{
+				var piece = GetPieceAt(r, c);
+				var canFall = PieceCanFall(r, c);
+
+				fallstate[r, c] = PieceCanFall(r, c);
+			}
+		}
+
+		// Now that all fallstates have been calculated perform the actual movements.
+		// NOTE it is important that this happens in order from bottom to top!
+		for (var r = 0; r < ActualRows; ++r)
+		{
+			for (var c = 0; c < ActualCols; ++c)
+			{
+				if (fallstate[r,c] == FallState.ShouldFall)
+				{
+					CauseFall(r, c);
+				}
+			}
+		}
+	}
+
+	private void CauseFall(int r, int c)
+	{
+		var thisPiece = GetPieceAt(r, c);
+		PerformSwap(thisPiece.Row, thisPiece.Col, BoardDirection.Down, GlobalTuning.Instance.FallSpeed, Mathf.Infinity, true);
 	}
 
 	int CountMatches(int r, int c, BoardDirection direction)
 	{
 		var thisPiece = GetPieceAt(r, c);
-		if (thisPiece.IsEmpty || thisPiece.IsMoving || thisPiece.IsFalling)
+		if (thisPiece.IsEmpty || thisPiece.IsMoving)
 			return 0;
 
 		var matches = 0;
 		while (GetNeighborPosition(r, c, out r, out c, direction))
 		{
 			var matchPiece = GetPieceAt(r, c);
-			if (matchPiece.IsMoving || matchPiece.IsFalling)
+			if (matchPiece.IsMoving)
 				break;
 			if (matchPiece.MatchGroup != thisPiece.MatchGroup)
 				break;
@@ -284,7 +450,7 @@ public class GameBoard : MonoBehaviour
 				if (matches >= GlobalTuning.Instance.MinMatchingPieces)
 				{
 					// TODO: resolve the responsibility here, half things being done by board half by piece in a way that doesn't make sense.
-					if (piece.IsCombining || piece.IsFalling || piece.IsMoving)
+					if (piece.IsCombining || piece.IsMoving)
 						continue;
 					piece.BeginCombo();
 					if (GlobalDeathCountdown <= 0f)
@@ -299,8 +465,10 @@ public class GameBoard : MonoBehaviour
 	public bool DoFallCheck = false;
 	public bool DoCombineCheck = true;
 	public bool InsertRowDebug = false;
-	public bool ResetDoLoopFlagsAfterProcessing = false;
 	public bool InsertGarbageDebug = false;
+	public string DebugBoardString;
+	public bool DebugSerializeBoardString;
+	public bool DebugDeserializeBoard;
 	private float timeTillNextRow { get; set; }
 	private void Update()
 	{
@@ -312,9 +480,6 @@ public class GameBoard : MonoBehaviour
 		if (DoCombineCheck)
 			CheckForCombos();
 
-		if (ResetDoLoopFlagsAfterProcessing)
-			DoFallCheck = DoCombineCheck = false;
-
 		if (InsertRowDebug)
 		{
 			MoveUpOneRow();
@@ -325,6 +490,18 @@ public class GameBoard : MonoBehaviour
 		{
 			InsertGarbagePiece(10,1,4,3);
 			InsertGarbageDebug = false;
+		}
+
+		if (DebugSerializeBoardString)
+		{
+			SerializeBoard(out DebugBoardString);
+			DebugSerializeBoardString = false;
+		}
+
+		if (DebugDeserializeBoard)
+		{
+			DeserializeBoard(DebugBoardString);
+			DebugDeserializeBoard = false;
 		}
 
 		// slide up.
@@ -343,7 +520,54 @@ public class GameBoard : MonoBehaviour
 			GlobalDeathCountdown -= Time.deltaTime;
 	}
 
-	private void InsertGarbagePiece(int r, int c, int width, int height)
+	private int GetRandomFactorForGarbageColumns(int number)
+	{
+		// Cap the max garbageGroup blocks.
+		if (number > 12)
+			number = 12;
+
+		// 7 won't fit in any config, make it 6
+		if (number == 7)
+			number = 6;
+
+		switch (number)
+		{
+			case 4:
+				return new int[]{2,4}[OtherRandomGenerator.Next(0,1)];
+			case 6:
+				return new int[]{2,3,6}[OtherRandomGenerator.Next(0,2)];
+
+			// Don't do more than the number of columns!  Weird and hacky from here down..
+			case 8:
+				return new int[] { 2, 4 }[OtherRandomGenerator.Next(0, 1)];
+			case 9:
+				return 3;
+			case 10:
+				return 5;
+			case 12:
+				return new int[] { 3,4,6 }[OtherRandomGenerator.Next(0, 2)];
+
+			default:
+				return number;
+		}
+	}
+
+	public void InsertGarbageRandomly(int totalSize)
+	{
+		// What shape should the garbage be?  Pick a random factor?  For now let's just
+		int garboWidth = GetRandomFactorForGarbageColumns(totalSize);
+		int garboHeight = totalSize / garboWidth;
+
+		// Insert at the top
+		int rowInsert = ActualRows - garboHeight - 1; 
+
+		// Insert at a spot where it will fit.
+		int colInsert = ActualCols - garboWidth > 0 ? OtherRandomGenerator.Next(0, ActualCols - garboWidth) : 0;
+		InsertGarbagePiece(rowInsert, colInsert, garboWidth, garboHeight);
+	}
+
+	int garbageCounter = 0;
+	public void InsertGarbagePiece(int r, int c, int width, int height)
 	{
 		//
 		List<GamePiece> createdGarbagePieces = new List<GamePiece>();
@@ -352,7 +576,7 @@ public class GameBoard : MonoBehaviour
 			for (var col = c; col < c + width; ++col)
 			{
 				var piece = GetPieceAt(row, col);
-				PieceFactory.MutateGamePiece(ref piece, NumPieceTypes+1);
+				PieceFactory.MutateGamePiece(piece, NumPieceTypes + 1 + garbageCounter);
 				createdGarbagePieces.Add(piece);
 				piece.IsGarbage = true;
 			}
@@ -362,6 +586,8 @@ public class GameBoard : MonoBehaviour
 		{
 			piece.ConnectedPieces.AddRange(createdGarbagePieces);
 		}
+
+		++garbageCounter;
 	}
 
 	private void UpdateTargetPositionForScrolling()
@@ -376,6 +602,7 @@ public class GameBoard : MonoBehaviour
 	public Vector3 StartPosition { get; set; }
 	private bool MoveUpOneRow(GamePiece[] newRow = null)
 	{
+		OnRowAdded(this);
 		GlobalTuning.Instance.OnRowAdded();
 		UpdateTargetPositionForScrolling();
 
@@ -389,9 +616,6 @@ public class GameBoard : MonoBehaviour
 				GameOver = true;
 				return true;
 			}
-
-			// TODO: piece pooling!  Just move these to the bottom?
-			GameObject.Destroy(GetPieceAt(ActualRows - 1, c).gameObject);
 		}
 
 		// Move every piece up one (except the last row!  Can't move it up...
@@ -410,7 +634,7 @@ public class GameBoard : MonoBehaviour
 			{
 				var piece = CreateEmptyPieceAt(0, c);
 				var newMatchGroup = BoardRandomGenerator.Next(1, NumPieceTypes);
-				PieceFactory.MutateGamePiece(ref piece, newMatchGroup);
+				PieceFactory.MutateGamePiece(piece, newMatchGroup);
 			}
 		}
 		else
@@ -422,5 +646,22 @@ public class GameBoard : MonoBehaviour
 		}
 
 		return false;
+	}
+
+	public bool IsInSteadyState()
+	{
+		foreach (var piece in pieces)
+		{
+			if (piece.IsCombining)
+				return false;
+
+			if (piece.IsDegarbifying)
+				return false;
+
+			if (piece.IsMoving)
+				return false;
+		}
+
+		return true;
 	}
 }

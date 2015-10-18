@@ -5,8 +5,9 @@ public class GamePieceFactory : MonoBehaviour
 {
 	public GamePiece PiecePrefab;
 
-	public void MutateGamePiece(ref GamePiece piece, int matchGroup)
+	public void MutateGamePiece(GamePiece piece, int matchGroup)
 	{
+		piece.ClearState();
 		piece.MatchGroup = matchGroup;
 		GenerateGamePieceAppearance(piece);
 	}
