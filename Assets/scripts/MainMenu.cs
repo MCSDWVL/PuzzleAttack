@@ -26,6 +26,14 @@ public class MainMenu : MonoBehaviour
 		if (board.GameOver)
 		{
 			garboMan.SerializedState = GUI.TextField(new Rect(10, 10, 200, 20), garboMan.SerializedState, 2048);
+			if (GUI.Button(new Rect(210, 10, 200, 20), "Copy to Clipboard"))
+			{
+				TextEditor te = new TextEditor();
+				te.content = new GUIContent(garboMan.SerializedState);
+				te.SelectAll();
+				te.Copy();
+			}
+
 			if (GUI.Button(new Rect(10, 100, 200, 20), "Start Game"))
 				StartNewGame(garboMan.SerializedState);
 		}
