@@ -33,12 +33,16 @@ public class MainMenu : MonoBehaviour
 				te.SelectAll();
 				te.Copy();
 
-				// TODO: Ugh.
-				gameObject.SendMessage("CopyHack", garboMan.SerializedState);
+				Application.ExternalCall("CopyHack", garboMan.SerializedState);
 			}
 
 			if (GUI.Button(new Rect(10, 100, 200, 20), "Start Game"))
 				StartNewGame(garboMan.SerializedState);
 		}
+	}
+
+	private void ExternalHack(string input)
+	{
+		garboMan.SerializedState = input;
 	}
 }
