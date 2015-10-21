@@ -19,6 +19,13 @@ public class SharedGameStateManager : MonoBehaviour
 		public string garboState;
 		public int round;
 
+		public void CopyFrom(PerPlayerInformation other)
+		{
+			boardState = other.boardState;
+			garboState = other.garboState;
+			round = other.round;
+		}
+
 		public bool IsValid() { return round > 0; }
 
 		public void InitializeInvalid()
@@ -95,13 +102,20 @@ public class SharedGameStateManager : MonoBehaviour
 		// If we already have 3 valid rounds we need to drop the two starting ones, move back the remaining opponent round, and write ours to our second position.
 		if(numValidRounds == 3)
 		{
+			var localNumRounds = localPlayerStates.Count(x => x.IsValid());
+			var remoteNumRounds = remotePlayerStates.Count(x => x.IsValid());
+
+			Debug.Log("Shifting rounds down w/ local " + localNumRounds + " remote " + remoteNumRounds);
+
 			// Move all second round info into first round info.
-			localPlayerStates[0] = localPlayerStates[1];
-			remotePlayerStates[0] = remotePlayerStates[1];
+			localPlayerStates[0].CopyFrom(localPlayerStates[1]);
+			remotePlayerStates[0].CopyFrom(remotePlayerStates[1]);
 
 			// Invalidate second round info.
 			localPlayerStates[1].InitializeInvalid();
 			remotePlayerStates[1].InitializeInvalid();
+
+			numValidRounds = GetNumValidRoundsFromPlayerStates();
 		}
 
 		// If we have at least 2 valid rounds now we want to write to second round, otherwise to first.

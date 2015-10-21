@@ -142,12 +142,20 @@ public class GameBoard : MonoBehaviour
 		}
 
 		// Link all garbage pieces together.
-		int biggestGarbageMatch = NumPieceTypes + 1;
 		List<GamePiece> garbageGroup = new List<GamePiece>();
+		List<GamePiece> unmatchedGarbage = new List<GamePiece>();
+
 		do
 		{
+			//2054772776x1c2c2c4c4c4r4c1c4c4c3c2r1c10c4c3c4c1r4c10c2c2c2c4r1c8c2c1c4c2r1c10c3c1c2c4r2c10c3c0c1c3r4c10c0c0c4c4r4c10c0c0c1c3r0c0c0c0c1c2r0c0c0c0c4c2r0c0c0c0c0c0r0c0c0c0c0c0s3g0g0g3g3s1pss0p1c2c2c4c4c4r4c1c4c4c3c2r1c0c4c3c4c1r4c0c2c2c2c4r1c0c2c1c4c2r1c0c3c1c2c4r2c0c3c0c1c3r4c0c0c0c4c4r4c0c0c0c1c3r0c0c0c0c1c2r0c0c0c0c4c2r0c0c0c0c0c0r0c0c0c0c0c0s3g0g0g3g3s1pss0
+			unmatchedGarbage.Clear();
+			unmatchedGarbage.AddRange(from GamePiece piece in pieces where piece.MatchGroup > NumPieceTypes && !piece.IsGarbage select piece);
+
+			if (unmatchedGarbage.Count <= 0)
+				break;
+
 			garbageGroup.Clear();
-			garbageGroup.AddRange(from GamePiece piece in pieces where piece.MatchGroup == biggestGarbageMatch select piece);
+			garbageGroup.AddRange(from GamePiece piece in pieces where piece.MatchGroup == unmatchedGarbage[0].MatchGroup select piece);
 			if (garbageGroup == null)
 				break;
 			foreach (var garbagePiece in garbageGroup)
@@ -155,12 +163,14 @@ public class GameBoard : MonoBehaviour
 				garbagePiece.IsGarbage = true;
 				garbagePiece.ConnectedPieces.AddRange(garbageGroup);
 			}
-			++biggestGarbageMatch;
-		} while (garbageGroup.Count > 0);
+		} while (unmatchedGarbage.Count > 0);
 	}
 
 	void InitializeEmptyBoard(int rows, int columns) 
 	{
+		if (pieces != null)
+			return;
+		
 		pieces = new GamePiece[rows, columns];
 		swapBuffer = new GamePiece[rows, columns];
 
@@ -488,7 +498,7 @@ public class GameBoard : MonoBehaviour
 
 		if (InsertGarbageDebug)
 		{
-			InsertGarbagePiece(10,1,4,3);
+			InsertGarbagePiece(10,1,1,1);
 			InsertGarbageDebug = false;
 		}
 
@@ -530,6 +540,9 @@ public class GameBoard : MonoBehaviour
 		if (number == 7)
 			number = 6;
 
+		if (number == 11)
+			number = 10;
+
 		switch (number)
 		{
 			case 4:
@@ -569,6 +582,7 @@ public class GameBoard : MonoBehaviour
 	int garbageCounter = 0;
 	public void InsertGarbagePiece(int r, int c, int width, int height)
 	{
+		Debug.Log("igp: " + r + " " + c + " " + width + " " + height);
 		//
 		List<GamePiece> createdGarbagePieces = new List<GamePiece>();
 		for (var row = r; row < r + height; ++row)
@@ -602,7 +616,6 @@ public class GameBoard : MonoBehaviour
 	public Vector3 StartPosition { get; set; }
 	private bool MoveUpOneRow(GamePiece[] newRow = null)
 	{
-		OnRowAdded(this);
 		GlobalTuning.Instance.OnRowAdded();
 		UpdateTargetPositionForScrolling();
 
@@ -611,11 +624,14 @@ public class GameBoard : MonoBehaviour
 		// Check if the top row breaks (aka game over)
 		for (var c = 0; c < ActualCols; ++c)
 		{
-			if (GetPieceAt(ActualRows - 1, c).MatchGroup != GamePiece.EMPTY_MATCH_GROUP)
+			var piece = GetPieceAt(ActualRows - 1, c);
+			if (piece.MatchGroup != GamePiece.EMPTY_MATCH_GROUP)
 			{
 				GameOver = true;
 				return true;
 			}
+			piece.PieceComboed -= OnPieceComboed;
+			GameObject.Destroy(piece.gameObject);
 		}
 
 		// Move every piece up one (except the last row!  Can't move it up...
@@ -633,6 +649,7 @@ public class GameBoard : MonoBehaviour
 			for (var c = 0; c < ActualCols; ++c)
 			{
 				var piece = CreateEmptyPieceAt(0, c);
+				piece.PieceComboed += OnPieceComboed;
 				var newMatchGroup = BoardRandomGenerator.Next(1, NumPieceTypes);
 				PieceFactory.MutateGamePiece(piece, newMatchGroup);
 			}
@@ -645,6 +662,7 @@ public class GameBoard : MonoBehaviour
 			}
 		}
 
+		OnRowAdded(this);
 		return false;
 	}
 

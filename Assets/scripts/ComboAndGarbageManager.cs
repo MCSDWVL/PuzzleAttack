@@ -10,6 +10,8 @@ public class ComboAndGarbageManager : MonoBehaviour
 	private int currentRowInChunk = 0;
 	private GameBoard board;
 	private SharedGameStateManager serializer;
+
+	public int[] GarbageTable = new int[]{ 2, 2, 2, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 6, 6, 12 };
 	
 	public string SerializedState;
 
@@ -44,7 +46,9 @@ public class ComboAndGarbageManager : MonoBehaviour
 		if (inputGarbageTimes != null && inputGarbageTimes.Length > currentRowInChunk && inputGarbageTimes[currentRowInChunk] > 0)
 		{
 			// Trigger Garbage Creation
-			board.InsertGarbageRandomly(inputGarbageTimes[currentRowInChunk]);
+			var garbageLevel = inputGarbageTimes[currentRowInChunk];
+			var garbageAmount = GarbageTable[Mathf.Min(GarbageTable.Length-1, garbageLevel)];
+			board.InsertGarbageRandomly(garbageAmount);
 		}
 
 		if (currentRowInChunk >= GlobalTuning.Instance.RowsPerGameChunk)
@@ -66,6 +70,7 @@ public class ComboAndGarbageManager : MonoBehaviour
 
 	public void StartRoundFromSerializedString(string serializedString)
 	{
+		Debug.Log("Deserializing " + serializedString);
 		if(serializedString != null && serializedString != "")
 			serializer.Deserialize(serializedString);
 

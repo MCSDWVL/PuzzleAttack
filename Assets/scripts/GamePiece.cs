@@ -66,6 +66,19 @@ public class GamePiece : MonoBehaviour
 		initialDegarbifyTime = 0f;
 		degarbifyTime = 0f;
 	
+		// Tell any piece we're connected to that we aren't anymore
+		if (ConnectedPieces != null)
+		{
+			foreach (var piece in ConnectedPieces)
+			{
+				if (piece == this)
+					continue;
+				else
+					piece.ConnectedPieces.Remove(this);
+			}
+		}
+
+		// Forget everything we're connected to
 		if(ConnectedPieces != null)
 			ConnectedPieces.Clear();
 	}
