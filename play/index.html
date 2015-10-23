@@ -100,13 +100,13 @@ try {
   codeXHR.send(null);
 }
 </script>
-	<script type='text/javascript'>
-       function CopyHack(x) {
-         x = prompt("Copy string: ", x);
-+        if (x != null) {
-+          SendMessage ('GameSystems', 'ExternalHack', x);
-+        }
-       }
-     </script>
+<script type='text/javascript'>
+	function CopyHack(x) {
+		x = prompt("Copy string: ", x);
+		if (x != null) {
+			SendMessage ('GameSystems', 'ExternalHack', x);
+		}
+	}
+</script>
   </body>
 </html>
