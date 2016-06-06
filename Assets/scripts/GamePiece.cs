@@ -26,9 +26,6 @@ public class GamePiece : MonoBehaviour
 
 	private SpriteRenderer sprite;
 
-	private static float globalDeathCountdown;
-	private static float globalDeathDelay;
-
 	public List<GamePiece> ConnectedPieces { get; private set; }
 
 	public int Row { get; set; }
@@ -88,14 +85,14 @@ public class GamePiece : MonoBehaviour
 		return ConnectedPieces.Contains(other);
 	}
 
-	public void BeginCombo()
+	public void BeginCombo(float startTime)
 	{
 		if (IsCombining)
 			return;
 		IsCombining = true;
 
 		startingColor = sprite.color;
-		deathCountdown = GlobalTuning.Instance.CombineTime;
+		deathCountdown = startTime;
 	}
 
 	public void SwapTo(Vector3 targetPosition, float moveSpeed = Mathf.Infinity)
@@ -119,19 +116,21 @@ public class GamePiece : MonoBehaviour
 
 	private void Update()
 	{
-		UpdateCombining();
+		UpdateCombining(Time.deltaTime);
 		UpdateMoving();
 		UpdateDegarbify();
 	}
+	
+	private void UpdateDeathCountdown(float dt)
+	{
+		deathCountdown -= dt;
+	}
 
-	private void UpdateCombining()
+	private void UpdateCombining(float dt)
 	{
 		if (IsCombining)
 		{
-			if (MotherBoard.GlobalDeathDelay > 0)
-				deathCountdown = Mathf.Lerp(deathCountdown, MotherBoard.GlobalDeathCountdown, (GlobalTuning.Instance.DelayOnCombo - MotherBoard.GlobalDeathDelay) / GlobalTuning.Instance.DelayOnCombo);
-			else
-				deathCountdown = MotherBoard.GlobalDeathCountdown;
+			UpdateDeathCountdown(dt);
 
 			sprite.color = Color.Lerp(startingColor, Color.white, (GlobalTuning.Instance.CombineTime - deathCountdown) / GlobalTuning.Instance.CombineTime);
 			if (deathCountdown <= 0)

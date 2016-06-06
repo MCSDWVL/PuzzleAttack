@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections;
 
-public class GamePieceFactory : MonoBehaviour
+public class GamePieceFactory : MonoBehaviour, IPieceFactory
 {
 	public GamePiece PiecePrefab;
 
@@ -15,7 +15,7 @@ public class GamePieceFactory : MonoBehaviour
 	public GamePiece CreateGamePiece(int MatchGroup = GamePiece.EMPTY_MATCH_GROUP)
 	{
 		var newPiece = GameObject.Instantiate(PiecePrefab) as GamePiece;
-		newPiece.MatchGroup = GamePiece.EMPTY_MATCH_GROUP;
+		newPiece.MatchGroup = MatchGroup;
 		GenerateGamePieceAppearance(newPiece);
 		newPiece.MotherFactory = this;
 		return newPiece;
@@ -25,6 +25,11 @@ public class GamePieceFactory : MonoBehaviour
 	public Color[] GamePieceColors = { Color.clear, Color.red, Color.cyan, Color.yellow, Color.green, Color.magenta, Color.blue };
 	public void GenerateGamePieceAppearance(GamePiece piece)
 	{
+		if (!piece) {
+			Debug.LogError("No piece prefab in factory!");
+			return;
+		}
+		
 		var sprite = piece.GetComponent<SpriteRenderer>();
 		if (sprite)
 		{
@@ -34,3 +39,11 @@ public class GamePieceFactory : MonoBehaviour
 		// TODO: add a little shapey thing
 	}
 }
+
+public interface IPieceFactory
+{
+	void MutateGamePiece(GamePiece piece, int matchGroup);
+	GamePiece CreateGamePiece(int MatchGroup = GamePiece.EMPTY_MATCH_GROUP);
+	void GenerateGamePieceAppearance(GamePiece piece);
+}
+

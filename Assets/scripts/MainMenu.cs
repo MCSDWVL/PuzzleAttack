@@ -18,7 +18,7 @@ public class MainMenu : MonoBehaviour
 
 	private void StartNewGame(string serializedState)
 	{
-			garboMan.StartRoundFromSerializedString(serializedState);
+		garboMan.StartRoundFromSerializedString(serializedState);
 	}
 
 	private void OnGUI()

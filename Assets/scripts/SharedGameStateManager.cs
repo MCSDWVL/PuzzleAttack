@@ -52,7 +52,7 @@ public class SharedGameStateManager : MonoBehaviour
 			// We might be re-serializing the other half of the hot potato object, in which case we just 
 			// want to write back our values, not check with actual game objects.
 			if(board)
-				boardState = board.Serialize();
+				boardState = SerializationHelper.Serialize(board);
 			if(garboMan)
 				garboState  = garboMan.Serialize();
 			round = currentRound;
@@ -178,7 +178,7 @@ public class SharedGameStateManager : MonoBehaviour
 
 		if (localNumRounds == 0)
 		{
-			board.ClearBoard();
+			board.ClearBoard(board.PieceFactory);
 			board.InitializeFromRemote();
 			garboMan.Clear();
 			board.GameOver = false;
@@ -192,7 +192,7 @@ public class SharedGameStateManager : MonoBehaviour
 			var remoteHead = remotePlayerStates[remoteNumRounds - 1];
 			var headBoard = localHead.boardState;
 			var headGarbage = remoteHead.garboState;
-			board.DeserializeBoard(headBoard);
+			SerializationHelper.DeserializeBoard(board, headBoard, board.PieceFactory);
 			garboMan.Deserialize(headGarbage);
 			board.GameOver = false;
 			return true;

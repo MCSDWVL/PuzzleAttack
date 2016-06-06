@@ -1,15 +1,18 @@
 ﻿using UnityEngine;
-using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 
-public class PlayerInputManager : MonoBehaviour 
+// TODO: change this to interact with an updater instead of being one.
+public class PlayerInputManager : BoardUpdater 
 {
 	public GameBoard Board;
 	public GameObject Cursor;
+	private List<BoardAction> action_ = new List<BoardAction>(1);
 	
 	int cursorRow;
 	int cursorCol;
 
-	private void HandlePlayerInput()
+	private BoardAction HandlePlayerInput()
 	{
 		if (Input.GetButtonDown("up"))
 			HandleMovement(GameBoard.BoardDirection.Up);
@@ -20,12 +23,19 @@ public class PlayerInputManager : MonoBehaviour
 		else if (Input.GetButtonDown("down"))
 			HandleMovement(GameBoard.BoardDirection.Down);
 		else if (Input.GetButtonDown("swap"))
-			HandleSwap();
+			return CreateSwap();
+		return null;
 	}
 
-	private void HandleSwap()
+	private BoardAction CreateSwap()
 	{
-		Board.PerformSwap(cursorRow, cursorCol, GameBoard.BoardDirection.Right, GlobalTuning.Instance.SwapSpeed);
+		Debug.Log("Creating action");
+		SwapAction action = new SwapAction();
+		action.Row = cursorRow;
+		action.Column = cursorCol;
+		action.Direction = GameBoard.BoardDirection.Right;
+		action.Speed1 = GlobalTuning.Instance.SwapSpeed;
+		return action;
 	}
 
 	private void HandleMovement(GameBoard.BoardDirection direction)
@@ -62,12 +72,19 @@ public class PlayerInputManager : MonoBehaviour
 		Cursor.transform.localPosition = newPosition;
 	}
 
-	private void Update()
+	public override IEnumerable<BoardAction> UpdateBoard(GameBoard board, float dt)
 	{
 		if (Board.GameOver)
-			return;
+			return Enumerable.Empty<BoardAction>();
 
-		HandlePlayerInput();
+		BoardAction action = HandlePlayerInput();
+		action_.Clear();
+		if (action != null)
+		{
+			action_.Add(action);
+			Debug.Log("Adding action");
+		}
+		return action_.AsReadOnly();
 	}
 
 	private void Start()
